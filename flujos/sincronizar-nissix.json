@@ -1,0 +1,824 @@
+{
+  "id": "SyncNissixCEA001",
+  "name": "Sincronizar alumnos desde NissiX (domingos, días de cobro y botón del panel)",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Bogota",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all",
+    "saveManualExecutions": false
+  },
+  "nodes": [
+    {
+      "id": "s0",
+      "name": "Probar ahora",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -220,
+        -160
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "s1",
+      "name": "Domingos 6 p. m.",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -220,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                0
+              ],
+              "triggerAtHour": 18
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "s2",
+      "name": "Iniciar sesión en NissiX",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ],
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "httpCustomAuth": {
+          "id": "NissixCEALectura",
+          "name": "NissiX (solo lectura)"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "https://nissixapp.transitodatos.com/nissix-server/public/api/auth/login",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "s3",
+      "name": "Rango: últimos 90 días",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        -100
+      ],
+      "parameters": {
+        "jsCode": "// Procesos vigentes = facturas de los últimos 90 días (regla del CEA).\nconst sesion = $input.first().json;\nif (!sesion.accessToken || !sesion.user) {\n  throw new Error('NissiX no devolvió sesión (¿cambió el usuario o la contraseña?)');\n}\nif (sesion.user.estado && sesion.user.estado !== 'activo') {\n  throw new Error('El usuario de NissiX está inactivo');\n}\nconst dia = (d) => d.toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });\nconst hoy = new Date();\nreturn [{ json: {\n  usuario: encodeURIComponent(sesion.user.name),\n  desde: dia(new Date(hoy.getTime() - 90 * 24 * 3600 * 1000)),\n  hasta: dia(hoy),\n} }];"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "s4",
+      "name": "Facturas del periodo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        -100
+      ],
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "url": "=https://nissixapp.transitodatos.com/nissix-server/public/api/auth/facturas/fechas/{{ $json.usuario }}/{{ $json.desde }}/{{ $json.hasta }}/18",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Iniciar sesión en NissiX').first().json.accessToken }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      }
+    },
+    {
+      "id": "s5",
+      "name": "Una por factura",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        -100
+      ],
+      "parameters": {
+        "jsCode": "// NissiX responde una lista de facturas (o 0 si no hay). Deja una por ítem, sin repetir.\nconst vistas = new Set();\nconst salida = [];\nfor (const item of $input.all()) {\n  const lista = Array.isArray(item.json) ? item.json : (item.json.data ?? [item.json]);\n  for (const f of lista) {\n    const numero = f && f.numero_factura;\n    if (!numero || vistas.has(numero)) continue;\n    vistas.add(numero);\n    salida.push({ json: { numero_factura: numero } });\n  }\n}\nif (!salida.length) throw new Error('NissiX no devolvió facturas para el periodo (¿el usuario ve todas las facturas?)');\nreturn salida;"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "s6",
+      "name": "Detalle de cada factura",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        -100
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "url": "=https://nissixapp.transitodatos.com/nissix-server/public/api/auth/detalles_factura/{{ encodeURIComponent($json.numero_factura) }}/18",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Iniciar sesión en NissiX').first().json.accessToken }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000,
+          "batching": {
+            "batch": {
+              "batchSize": 5,
+              "batchInterval": 1000
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "s7",
+      "name": "Armar alumnos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        -100
+      ],
+      "parameters": {
+        "jsCode": "// Mismas reglas del importador del panel (panel/excel.js): un alumno por cédula,\n// saldo de NissiX, teléfono en formato WhatsApp (57 + 10 dígitos).\nconst pesos = (v) => {\n  if (typeof v === 'number') return Math.round(v);\n  const t = String(v ?? '').replace(/[^\\d,.-]/g, '');\n  if (!t) return null;\n  const n = Number(t.replace(/\\./g, '').replace(',', '.'));\n  return Number.isFinite(n) ? Math.round(n) : null;\n};\nconst categoria = (tramite) => {\n  const texto = String(tramite ?? '');\n  const cea = texto.match(/CEA:(.*?)(CRC:|$)/is)?.[1] ?? texto;\n  const cats = cea.match(/\\b[ABC]\\s?[1-3]\\b/gi) ?? [];\n  const unicas = [...new Set(cats.map((c) => c.replace(/\\s/g, '').toUpperCase()))];\n  return unicas.length ? unicas.join(' + ') : null;\n};\nconst telefono = (t) => {\n  const d = String(t ?? '').replace(/\\D/g, '');\n  const n = d.length === 10 && d.startsWith('3') ? '57' + d : d;\n  return /^573\\d{9}$/.test(n) ? n : null;\n};\n\n// NissiX devuelve el detalle con UNA FILA POR SERVICIO (p. ej. una para C1 y otra para A2),\n// y n8n parte la lista en varios ítems. Se juntan todas las filas de cada factura:\n// los datos del cliente y el saldo se toman de la primera; las categorías, de todas.\nconst detalles = new Map();\nfor (const item of $input.all()) {\n  const lista = Array.isArray(item.json) ? item.json : [item.json];\n  for (const f of lista) {\n    if (!f || !f.numero_factura) continue;\n    const previa = detalles.get(f.numero_factura);\n    const texto = [f.tramite, f.categoria, f.servicio].filter(Boolean).join(' ');\n    if (previa) previa._tramites.push(texto);\n    else detalles.set(f.numero_factura, { ...f, _tramites: [texto] });\n  }\n}\nconst avisos = [];\nconst pedidas = $('Una por factura').all().map((i) => i.json.numero_factura);\nconst faltan = pedidas.filter((n) => !detalles.has(n));\nif (faltan.length) avisos.push(`sin detalle: ${faltan.join(', ')}`);\n\nconst porCedula = new Map();\nlet facturas = 0;\nfor (const f of detalles.values()) {\n  if (/anulad/i.test(String(f.estado_factura ?? ''))) continue;\n  const cats = [...new Set(f._tramites.flatMap((t) => (categoria(t) ?? '').split(' + ').filter(Boolean)))];\n  const cat = cats.length ? cats.join(' + ') : null;\n  if (!cat) continue; // no es curso de conducción (p. ej. solo exámenes CRC)\n  facturas++;\n  const cedula = String(f.cedula_cliente ?? '').replace(/[\\s.]/g, '');\n  if (!cedula) { avisos.push(`${f.numero_factura}: sin cédula`); continue; }\n  const tel = telefono(f.telefono_cliente);\n  if (!tel) avisos.push(`${f.numero_factura}: teléfono no válido`);\n  const fila = {\n    documento: cedula,\n    nombre: String(f.nombre_cliente ?? '').replace(/\\s+/g, ' ').trim(),\n    categoria: cat,\n    valor: pesos(f.valor_total_factura) ?? 0,\n    saldo: Math.max(pesos(f.saldo_pendiente) ?? 0, 0),\n    telefono: tel,\n  };\n  const previa = porCedula.get(cedula);\n  if (previa) {\n    previa.valor += fila.valor;\n    previa.saldo += fila.saldo;\n    previa.categoria = [...new Set(`${previa.categoria} + ${fila.categoria}`.split(' + '))].join(' + ');\n    previa.telefono = previa.telefono ?? fila.telefono;\n  } else {\n    porCedula.set(cedula, fila);\n  }\n}\nif (!porCedula.size) throw new Error('No quedó ningún alumno para importar: revisar la respuesta de NissiX');\nreturn [{ json: { filas: [...porCedula.values()], facturas, avisos: avisos.join('; ').slice(0, 1500) } }];\n"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "s8",
+      "name": "Importar alumnos",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1760,
+        -100
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qku8QvLcJHhdtYtv",
+          "name": "Supabase CEA"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select * from public.importar_alumnos($1::jsonb, true);",
+        "options": {
+          "queryReplacement": "={{ [ JSON.stringify($json.filas) ] }}"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "s9",
+      "name": "Registrar sincronización",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1980,
+        -100
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qku8QvLcJHhdtYtv",
+          "name": "Supabase CEA"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "insert into public.sincronizaciones (ok, facturas, creados, actualizados, sin_telefono, detalle, motivo) values (true, $1, $2, $3, $4, nullif($5, ''), $6);",
+        "options": {
+          "queryReplacement": "={{ [\n  $('Armar alumnos').first().json.facturas,\n  $json.creados ?? 0,\n  $json.actualizados ?? 0,\n  $json.sin_telefono ?? 0,\n  $('Armar alumnos').first().json.avisos,\n  ($('Motivo: botón del panel').isExecuted ? 'botón del panel' : $('Motivo: antes del cobro').isExecuted ? 'antes del cobro' : $('Motivo: domingo').isExecuted ? 'domingo' : 'prueba manual')\n] }}"
+        }
+      }
+    },
+    {
+      "id": "e1",
+      "name": "Describir error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        160
+      ],
+      "parameters": {
+        "jsCode": "const e = $input.first().json.error ?? $input.first().json;\nconst texto = typeof e === 'string' ? e : (e.message ?? JSON.stringify(e));\n// Nunca guardar el token ni la contraseña: solo el mensaje\nreturn [{ json: { detalle: String(texto).replace(/Bearer\\s+\\S+/gi, 'Bearer ***').slice(0, 500) } }];"
+      }
+    },
+    {
+      "id": "e2",
+      "name": "Registrar error",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1100,
+        160
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qku8QvLcJHhdtYtv",
+          "name": "Supabase CEA"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "insert into public.sincronizaciones (ok, detalle, motivo) values (false, $1, $2);",
+        "options": {
+          "queryReplacement": "={{ [ $json.detalle, ($('Motivo: botón del panel').isExecuted ? 'botón del panel' : $('Motivo: antes del cobro').isExecuted ? 'antes del cobro' : $('Motivo: domingo').isExecuted ? 'domingo' : 'prueba manual') ] }}"
+        }
+      }
+    },
+    {
+      "id": "boton-panel",
+      "name": "Botón del panel",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -880,
+        260
+      ],
+      "webhookId": "nissix-ahora",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "nissix-ahora",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "quien-pulsa",
+      "name": "¿Quién lo pulsó?",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -660,
+        260
+      ],
+      "parameters": {
+        "url": "https://TU-PROYECTO.supabase.co/auth/v1/user",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "sb_publishable_TU_CLAVE"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $json.headers.authorization || '' }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 15000
+        }
+      }
+    },
+    {
+      "id": "es-personal",
+      "name": "¿Es personal del CEA?",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -440,
+        260
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qku8QvLcJHhdtYtv",
+          "name": "Supabase CEA"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select exists(select 1 from public.personal where user_id = nullif($1, '')::uuid) as autorizado;",
+        "options": {
+          "queryReplacement": "={{ [ $json.statusCode === 200 && $json.body && $json.body.id ? $json.body.id : '' ] }}"
+        }
+      }
+    },
+    {
+      "id": "autorizado",
+      "name": "¿Autorizado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -220,
+        260
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a1",
+              "leftValue": "={{ $json.autorizado }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "resp-ok",
+      "name": "Responder: sincronizando",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        180
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"ok\":true,\"mensaje\":\"Sincronizando con NissiX\"}",
+        "options": {
+          "responseCode": 202
+        }
+      }
+    },
+    {
+      "id": "resp-no",
+      "name": "Responder: no autorizado",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        340
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"ok\":false,\"mensaje\":\"Inicia sesión en el panel\"}",
+        "options": {
+          "responseCode": 401
+        }
+      }
+    },
+    {
+      "id": "dias-cobro",
+      "name": "Días de cobro 11:30 a. m.",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -660,
+        500
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "triggerAtHour": 11,
+              "triggerAtMinute": 30
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "hay-cobro",
+      "name": "¿Hay cobros hoy?",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -440,
+        500
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qku8QvLcJHhdtYtv",
+          "name": "Supabase CEA"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select count(*)::int as alumnos from public.saldos_para_hoy(((now() at time zone 'America/Bogota')::date + time '12:00') at time zone 'America/Bogota');",
+        "options": {}
+      }
+    },
+    {
+      "id": "si-cobro",
+      "name": "¿Alguno?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -220,
+        500
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.alumnos }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "motivo-prueba-manual",
+      "name": "Motivo: prueba manual",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -160
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "motivo-domingo",
+      "name": "Motivo: domingo",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "motivo-bot-n-del-panel",
+      "name": "Motivo: botón del panel",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        220,
+        180
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "motivo-antes-del-cobro",
+      "name": "Motivo: antes del cobro",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        0,
+        500
+      ],
+      "parameters": {}
+    }
+  ],
+  "connections": {
+    "Domingos 6 p. m.": {
+      "main": [
+        [
+          {
+            "node": "Motivo: domingo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Iniciar sesión en NissiX": {
+      "main": [
+        [
+          {
+            "node": "Rango: últimos 90 días",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Describir error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rango: últimos 90 días": {
+      "main": [
+        [
+          {
+            "node": "Facturas del periodo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Describir error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Facturas del periodo": {
+      "main": [
+        [
+          {
+            "node": "Una por factura",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Describir error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Una por factura": {
+      "main": [
+        [
+          {
+            "node": "Detalle de cada factura",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Describir error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Detalle de cada factura": {
+      "main": [
+        [
+          {
+            "node": "Armar alumnos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Armar alumnos": {
+      "main": [
+        [
+          {
+            "node": "Importar alumnos",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Describir error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Importar alumnos": {
+      "main": [
+        [
+          {
+            "node": "Registrar sincronización",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Describir error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Describir error": {
+      "main": [
+        [
+          {
+            "node": "Registrar error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Probar ahora": {
+      "main": [
+        [
+          {
+            "node": "Motivo: prueba manual",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Botón del panel": {
+      "main": [
+        [
+          {
+            "node": "¿Quién lo pulsó?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Quién lo pulsó?": {
+      "main": [
+        [
+          {
+            "node": "¿Es personal del CEA?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Es personal del CEA?": {
+      "main": [
+        [
+          {
+            "node": "¿Autorizado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Autorizado?": {
+      "main": [
+        [
+          {
+            "node": "Responder: sincronizando",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder: no autorizado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Responder: sincronizando": {
+      "main": [
+        [
+          {
+            "node": "Motivo: botón del panel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Días de cobro 11:30 a. m.": {
+      "main": [
+        [
+          {
+            "node": "¿Hay cobros hoy?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Hay cobros hoy?": {
+      "main": [
+        [
+          {
+            "node": "¿Alguno?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Alguno?": {
+      "main": [
+        [
+          {
+            "node": "Motivo: antes del cobro",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Motivo: domingo": {
+      "main": [
+        [
+          {
+            "node": "Iniciar sesión en NissiX",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Motivo: prueba manual": {
+      "main": [
+        [
+          {
+            "node": "Iniciar sesión en NissiX",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Motivo: botón del panel": {
+      "main": [
+        [
+          {
+            "node": "Iniciar sesión en NissiX",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Motivo: antes del cobro": {
+      "main": [
+        [
+          {
+            "node": "Iniciar sesión en NissiX",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

@@ -1,0 +1,7 @@
+# Propone cada mes un PR cuando salen versiones nuevas de las acciones de GitHub Actions.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

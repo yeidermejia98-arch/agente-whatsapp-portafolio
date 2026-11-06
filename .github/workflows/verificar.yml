@@ -1,0 +1,48 @@
+# Revisa cada cambio antes de que llegue a main: pruebas de la base de datos, sintaxis del
+# panel y de las herramientas, flujos de n8n válidos y que no se cuelen claves ni datos personales.
+name: Verificar
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  revisiones:
+    name: Panel, flujos y seguridad
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Sintaxis de JavaScript (panel y herramientas)
+        run: for f in panel/*.js herramientas/*.cjs; do node --check "$f" || exit 1; done
+      - name: Flujos de n8n (JSON válido y con nodos)
+        run: |
+          node -e '
+            const fs = require("fs");
+            for (const f of fs.readdirSync("flujos")) {
+              const w = JSON.parse(fs.readFileSync("flujos/" + f, "utf8"));
+              const flujo = Array.isArray(w) ? w[0] : w;
+              if (!flujo.nodes?.length) throw new Error(f + ": sin nodos");
+              console.log("OK", f, flujo.nodes.length, "nodos");
+            }'
+      - name: Sin claves ni archivos privados
+        run: |
+          for f in panel/config.js n8n/.env servidor/.env .env; do
+            if git ls-files --error-unmatch "$f" >/dev/null 2>&1; then echo "::error::$f no debe estar en el repositorio"; exit 1; fi
+          done
+          if git grep -nIE 'EAA[A-Za-z0-9]{30,}|sk-ant-[A-Za-z0-9_-]{20,}|sb_secret_[A-Za-z0-9_-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY|eyJhbGciOi[A-Za-z0-9_-]{30,}\.[A-Za-z0-9_-]{30,}'; then
+            echo "::error::Parece una clave o token. Va en .env o en las credenciales de n8n, nunca en el código."; exit 1
+          fi
+      - name: Sin cédulas reales (Ley 1581)
+        # Los datos de prueba usan cédulas inventadas tipo 1000000001
+        run: |
+          if git grep -nIE '\b1[0-9]{9}\b' -- '*.sql' '*.html' '*.js' '*.md' '*.json' | grep -vE '\b10{6,}[0-9]{1,3}\b'; then
+            echo "::error::Parece una cédula real. Usa datos inventados (1000000001…)."; exit 1
+          fi

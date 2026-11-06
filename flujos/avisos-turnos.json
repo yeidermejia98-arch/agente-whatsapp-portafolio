@@ -1,0 +1,320 @@
+{
+  "id": "RecTurnosCEA0001",
+  "name": "Avisos de turnos (cada 5 min y botón Enviar ahora)",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Bogota"
+  },
+  "nodes": [
+    {
+      "id": "b8f1c2a0-0001-4c1a-9a01-000000000001",
+      "name": "Cada 5 minutos",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "b8f1c2a0-0001-4c1a-9a01-000000000002",
+      "name": "Avisos pendientes",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        900,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select * from public.avisos_turnos_pendientes(now(), $1::boolean);",
+        "options": {
+          "queryReplacement": "={{ [ $('Botón Enviar ahora').isExecuted ] }}"
+        }
+      }
+    },
+    {
+      "id": "b8f1c2a0-0001-4c1a-9a01-000000000003",
+      "name": "Enviar aviso por WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1140,
+        0
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.WHATSAPP_API_URL }}/{{ $env.WHATSAPP_PHONE_NUMBER_ID }}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  messaging_product: 'whatsapp',\n  to: $json.telefono,\n  type: 'template',\n  template: {\n    name: 'recordatorio_turno',\n    language: { code: 'es' },\n    components: [{\n      type: 'body',\n      parameters: [\n        { type: 'text', text: $json.nombre },\n        { type: 'text', text: $json.fecha },\n        { type: 'text', text: $json.hora },\n        { type: 'text', text: $json.instructor },\n        { type: 'text', text: $json.saldo }\n      ]\n    }]\n  }\n}) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "b8f1c2a0-0001-4c1a-9a01-000000000004",
+      "name": "Registrar envío",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1380,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select public.registrar_aviso_turno($1, $2, $3, $4, $5);",
+        "options": {
+          "queryReplacement": "={{ [\n  $('Avisos pendientes').item.json.turno_id,\n  $('Avisos pendientes').item.json.tipo,\n  !!($json.messages && $json.messages[0]),\n  ($json.messages && $json.messages[0]) ? $json.messages[0].id : '',\n  $json.error ? JSON.stringify($json.error).slice(0, 500) : ''\n] }}"
+        }
+      }
+    },
+    {
+      "id": "boton-avisos",
+      "name": "Botón Enviar ahora",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        220
+      ],
+      "webhookId": "avisos-ahora",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "avisos-ahora",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "avisos-quien",
+      "name": "¿Quién lo pulsó?",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        220,
+        220
+      ],
+      "parameters": {
+        "url": "https://TU-PROYECTO.supabase.co/auth/v1/user",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "sb_publishable_TU_CLAVE"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ $json.headers.authorization || '' }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 15000
+        }
+      }
+    },
+    {
+      "id": "avisos-personal",
+      "name": "¿Es personal del CEA?",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        440,
+        220
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select exists(select 1 from public.personal where user_id = nullif($1, '')::uuid) as autorizado;",
+        "options": {
+          "queryReplacement": "={{ [ $json.statusCode === 200 && $json.body && $json.body.id ? $json.body.id : '' ] }}"
+        }
+      }
+    },
+    {
+      "id": "avisos-autorizado",
+      "name": "¿Autorizado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        660,
+        220
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a1",
+              "leftValue": "={{ $json.autorizado }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "avisos-resp-ok",
+      "name": "Responder: enviando",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        880,
+        160
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"ok\":true,\"mensaje\":\"Enviando avisos\"}",
+        "options": {
+          "responseCode": 202
+        }
+      }
+    },
+    {
+      "id": "avisos-resp-no",
+      "name": "Responder: no autorizado",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        880,
+        300
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"ok\":false,\"mensaje\":\"Inicia sesión en el panel\"}",
+        "options": {
+          "responseCode": 401
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Cada 5 minutos": {
+      "main": [
+        [
+          {
+            "node": "Avisos pendientes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Avisos pendientes": {
+      "main": [
+        [
+          {
+            "node": "Enviar aviso por WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar aviso por WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Registrar envío",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Botón Enviar ahora": {
+      "main": [
+        [
+          {
+            "node": "¿Quién lo pulsó?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Quién lo pulsó?": {
+      "main": [
+        [
+          {
+            "node": "¿Es personal del CEA?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Es personal del CEA?": {
+      "main": [
+        [
+          {
+            "node": "¿Autorizado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Autorizado?": {
+      "main": [
+        [
+          {
+            "node": "Responder: enviando",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder: no autorizado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Responder: enviando": {
+      "main": [
+        [
+          {
+            "node": "Avisos pendientes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Panel [Nombre del CEA]</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@500;600;700&family=Source+Sans+3:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+  <!-- Pantalla de ingreso -->
+  <main id="vista-ingreso" class="ingreso">
+    <form id="form-ingreso" class="ingreso-caja">
+      <div class="marca marca-grande">
+        <img class="logo" src="logo.png" alt="[Nombre del CEA]" onerror="this.hidden = true; this.nextElementSibling.hidden = false">
+        <span class="logo-texto" hidden>AA</span>
+        <div>
+          <strong>[Nombre del CEA]</strong>
+          <span>Panel de administración</span>
+        </div>
+      </div>
+      <label>Correo <input type="email" name="correo" id="ingreso-correo" required autocomplete="username"></label>
+      <label>Contraseña <input type="password" name="clave" id="ingreso-clave" required autocomplete="current-password"></label>
+      <button type="submit">Entrar</button>
+      <p class="aviso" id="aviso-ingreso" role="alert"></p>
+    </form>
+  </main>
+
+  <!-- Panel -->
+  <div id="vista-panel" class="app" hidden>
+    <aside class="lateral">
+      <div class="marca">
+        <img class="logo" src="logo.png" alt="[Nombre del CEA]" onerror="this.hidden = true; this.nextElementSibling.hidden = false">
+        <span class="logo-texto" hidden>AA</span>
+        <div>
+          <strong>[Nombre del CEA]</strong>
+          <span>Administración</span>
+        </div>
+      </div>
+      <nav class="menu" role="tablist" aria-label="Secciones del panel">
+        <p class="menu-grupo">Operación</p>
+        <button role="tab" data-pestana="agenda" aria-selected="true">Agenda</button>
+        <button role="tab" data-pestana="alumnos">Alumnos y saldos</button>
+        <button role="tab" data-pestana="pagos">Pagos</button>
+        <button role="tab" data-pestana="matriculas">Matrículas <span id="contador-matriculas" class="contador" hidden></span></button>
+        <button role="tab" data-pestana="humano">Atención humana <span id="contador-humano" class="contador" hidden></span></button>
+        <p class="menu-grupo">Asistente Lizz</p>
+        <button role="tab" data-pestana="faq">Info del agente</button>
+        <button role="tab" data-pestana="mensajes">Mensajes enviados</button>
+        <p class="menu-grupo">Configuración</p>
+        <button role="tab" data-pestana="instructores">Instructores y vehículos</button>
+        <button role="tab" data-pestana="importar">Importar y NissiX</button>
+      </nav>
+      <div class="lateral-pie">
+        <span id="usuario-nombre" class="usuario"></span>
+        <button id="salir" class="secundario">Salir</button>
+      </div>
+    </aside>
+
+    <div class="contenido">
+      <header class="encabezado">
+        <h1 id="titulo-pagina">Agenda</h1>
+        <p class="aviso global" id="aviso" role="status"></p>
+      </header>
+
+      <!-- AGENDA -->
+      <section id="agenda" class="pestana">
+        <div class="tarjeta aviso-descanso" id="avisos-espera" hidden>
+          <p><strong>🌙 Horario de descanso</strong> (9 p. m. – 6 a. m.): <span id="avisos-espera-texto"></span></p>
+          <button type="button" id="enviar-avisos-ahora">Enviar ahora</button>
+        </div>
+        <div class="tarjeta">
+          <div class="semana-cabecera">
+            <div>
+              <h2>Agenda de la semana</h2>
+              <p class="sutil" id="semana-titulo"></p>
+            </div>
+            <label>Instructor <select id="semana-instructor"></select></label>
+            <div class="semana-nav">
+              <button type="button" class="secundario" id="semana-anterior" aria-label="Semana anterior">◀</button>
+              <button type="button" class="secundario" id="semana-hoy">Hoy</button>
+              <button type="button" class="secundario" id="semana-siguiente" aria-label="Semana siguiente">▶</button>
+            </div>
+          </div>
+          <div class="tabla-envoltura">
+            <div id="semana" class="semana" role="grid" aria-label="Agenda semanal del instructor"></div>
+          </div>
+          <p class="sutil">Haz clic en una hora libre para agendar y en un turno para ver sus datos, marcar asistencia o cancelarlo. Al agendar, el alumno recibe la confirmación por WhatsApp.</p>
+        </div>
+
+        <dialog id="dialogo-turno">
+          <form method="dialog" id="form-dialogo-turno" class="dialogo">
+            <h2 id="dialogo-titulo">Agendar turno</h2>
+            <p class="sutil" id="dialogo-cuando"></p>
+            <div id="dialogo-nuevo">
+              <div class="combo">
+                <label for="dialogo-alumno">Alumno (nombre, cédula o teléfono)</label>
+                <input id="dialogo-alumno" role="combobox" aria-autocomplete="list" aria-expanded="false"
+                       aria-controls="dialogo-sugerencias" autocomplete="off" placeholder="Escribe para buscar…">
+                <ul id="dialogo-sugerencias" class="sugerencias" role="listbox" hidden></ul>
+              </div>
+              <div class="rejilla">
+                <label>Categoría
+                  <select id="dialogo-categoria"><option value="">Primero elige el alumno</option></select>
+                </label>
+                <label>Vehículo
+                  <select id="dialogo-vehiculo"></select>
+                </label>
+                <label>Duración
+                  <select id="dialogo-duracion">
+                    <option value="60">1 hora</option>
+                    <option value="120" selected>2 horas</option>
+                    <option value="180">3 horas</option>
+                  </select>
+                </label>
+                <label>Tipo
+                  <select id="dialogo-tipo">
+                    <option value="practica">Práctica</option>
+                    <option value="examen">Examen</option>
+                    <option value="validacion">Validación</option>
+                    <option value="teorica">Teórica</option>
+                  </select>
+                </label>
+              </div>
+              <fieldset class="repetir">
+                <legend>Repetir a la misma hora</legend>
+                <div class="repetir-dias" id="dialogo-dias">
+                  <label><input type="checkbox" value="0"> Lun</label>
+                  <label><input type="checkbox" value="1"> Mar</label>
+                  <label><input type="checkbox" value="2"> Mié</label>
+                  <label><input type="checkbox" value="3"> Jue</label>
+                  <label><input type="checkbox" value="4"> Vie</label>
+                  <label><input type="checkbox" value="5"> Sáb</label>
+                  <label><input type="checkbox" value="6"> Dom</label>
+                </div>
+                <label>Durante
+                  <select id="dialogo-semanas">
+                    <option value="1">esta semana</option>
+                    <option value="2">2 semanas</option>
+                    <option value="3">3 semanas</option>
+                    <option value="4">4 semanas</option>
+                  </select>
+                </label>
+              </fieldset>
+              <p class="sutil" id="dialogo-resumen"></p>
+            </div>
+            <div id="dialogo-existente" hidden>
+              <p id="dialogo-detalle"></p>
+              <label>Estado <select id="dialogo-estado">
+                <option value="agendado">Agendado</option>
+                <option value="asistio">Asistió</option>
+                <option value="falto">Faltó</option>
+                <option value="cancelado">Cancelado</option>
+              </select></label>
+            </div>
+            <p class="aviso error" id="dialogo-error" role="alert"></p>
+            <div class="dialogo-acciones">
+              <button type="button" class="secundario" id="dialogo-cerrar">Cerrar</button>
+              <button type="button" id="dialogo-guardar">Agendar</button>
+            </div>
+          </form>
+        </dialog>
+
+        <div class="tarjeta">
+          <h2>Próximos turnos (14 días)</h2>
+          <div class="tabla-envoltura">
+            <table>
+              <thead><tr><th>Fecha</th><th>Hora</th><th>Alumno</th><th>Instructor</th><th>Tipo</th><th>Estado</th><th>Recordatorio</th></tr></thead>
+              <tbody id="lista-turnos"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <details class="tarjeta plegable">
+          <summary>Agendar con formulario (fecha y hora libres)</summary>
+          <form id="form-turno">
+            <div class="rejilla">
+              <label>Alumno <select name="alumno_id" required></select></label>
+              <label>Categoría <select name="categoria"><option value="">Primero elige el alumno</option></select></label>
+              <label>Instructor <select name="instructor_id"></select></label>
+              <label>Vehículo <select name="vehiculo_id"></select></label>
+              <label>Fecha <input type="date" name="fecha" required></label>
+              <label>Hora <input type="time" name="hora" required step="900"></label>
+              <label>Duración
+                <select name="duracion">
+                  <option value="60">1 hora</option>
+                  <option value="90">1 hora y media</option>
+                  <option value="120">2 horas</option>
+                </select>
+              </label>
+              <label>Tipo
+                <select name="tipo">
+                  <option value="practica">Práctica</option>
+                  <option value="teorica">Teórica</option>
+                  <option value="examen">Examen</option>
+                  <option value="validacion">Validación</option>
+                </select>
+              </label>
+            </div>
+            <button type="submit">Agendar</button>
+            <p class="sutil">Por WhatsApp, con su saldo: confirmación apenas se agenda y recordatorio 3 horas antes de la clase. Nada se envía entre 9 p. m. y 6 a. m. (lo que caiga ahí sale a las 6 a. m.).</p>
+          </form>
+        </details>
+      </section>
+
+      <!-- ALUMNOS -->
+      <section id="alumnos" class="pestana" hidden>
+        <div class="tarjeta">
+          <div class="barra-herramientas">
+            <label class="buscador">
+              <span class="visualmente-oculto">Buscar alumno</span>
+              <input type="search" id="buscar-alumno" placeholder="Buscar por nombre, cédula o teléfono" autocomplete="off">
+            </label>
+            <div class="segmentos" role="radiogroup" aria-label="Mostrar">
+              <label><input type="radio" name="filtro-alumnos" value="activos" checked> Activos</label>
+              <label><input type="radio" name="filtro-alumnos" value="con-saldo"> Con saldo</label>
+              <label><input type="radio" name="filtro-alumnos" value="sin-whatsapp"> Sin WhatsApp</label>
+              <label><input type="radio" name="filtro-alumnos" value="finalizados"> Finalizados</label>
+              <label><input type="radio" name="filtro-alumnos" value="todos"> Todos</label>
+            </div>
+            <span class="sutil conteo" id="conteo-alumnos"></span>
+            <button type="button" class="secundario boton-nissix">Actualizar saldos desde NissiX</button>
+          </div>
+          <p class="sutil ultima-nissix"></p>
+          <div class="tabla-envoltura">
+            <table>
+              <thead><tr><th>Nombre</th><th>Cédula</th><th>Categoría</th><th>WhatsApp</th><th class="numero">Valor curso</th><th class="numero">Pagado</th><th class="numero">Saldo</th><th></th></tr></thead>
+              <tbody id="lista-alumnos"></tbody>
+            </table>
+          </div>
+          <p class="sutil">“Finalizar” saca al alumno de la agenda cuando termina su proceso. No se borra nada: aparece en <strong>Finalizados</strong> y se puede reactivar.</p>
+        </div>
+
+        <details class="tarjeta plegable">
+          <summary>Agregar alumno a mano</summary>
+          <form id="form-alumno">
+            <div class="rejilla">
+              <label>Nombre completo <input name="nombre" required></label>
+              <label>Cédula <input name="documento" inputmode="numeric"></label>
+              <label>WhatsApp <input name="telefono" required inputmode="tel" placeholder="300 000 0000"></label>
+              <label>Categoría
+                <select name="categoria">
+                  <option>A2</option><option>B1</option><option>C1</option><option>C2</option>
+                  <option>C1 + A2</option><option>B1 + A2</option>
+                </select>
+              </label>
+              <label>Valor del curso <input name="valor_curso" type="number" min="0" step="1" inputmode="numeric" required></label>
+            </div>
+            <label class="casilla">
+              <input type="checkbox" name="autoriza_datos">
+              El alumno autorizó el tratamiento de sus datos y recibir mensajes por WhatsApp (Ley 1581 de 2012)
+            </label>
+            <button type="submit">Guardar alumno</button>
+          </form>
+        </details>
+      </section>
+
+      <!-- PAGOS -->
+      <section id="pagos" class="pestana" hidden>
+        <form id="form-pago" class="tarjeta">
+          <h2>Registrar pago</h2>
+          <div class="rejilla">
+            <label>Alumno <select name="alumno_id" required></select></label>
+            <label>Valor <input name="valor" type="number" min="1" step="1" inputmode="numeric" required></label>
+            <label>Medio
+              <select name="medio">
+                <option>Efectivo</option><option>Nequi</option><option>Daviplata</option>
+                <option>Transferencia</option><option>Tarjeta</option>
+              </select>
+            </label>
+            <label>Nota <input name="nota"></label>
+          </div>
+          <button type="submit">Registrar pago</button>
+          <p class="sutil">Para alumnos que vienen de NissiX, el saldo lo pone la facturación y se actualiza los domingos, antes de cada cobro o con el botón <em>Actualizar saldos desde NissiX</em>.</p>
+        </form>
+
+        <div class="tarjeta">
+          <h2>Últimos pagos</h2>
+          <div class="tabla-envoltura">
+            <table>
+              <thead><tr><th>Fecha</th><th>Alumno</th><th class="numero">Valor</th><th>Medio</th><th>Nota</th></tr></thead>
+              <tbody id="lista-pagos"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- MATRÍCULAS POR WHATSAPP -->
+      <section id="matriculas" class="pestana" hidden>
+        <div class="tarjeta">
+          <h2>Matrículas por WhatsApp</h2>
+          <p class="sutil">Lizz registra aquí a quien se inscribe. Cuando el alumno envía el comprobante, llega al WhatsApp de la oficina con sus datos. Verifica la transferencia en el banco y confirma el pago: el alumno queda creado, con su pago registrado, y empieza a recibir sus recordatorios.</p>
+          <div class="tabla-envoltura">
+            <table>
+              <thead><tr><th>Fecha</th><th>Nombre</th><th>Cédula</th><th>Categoría</th><th>Cuota</th><th>WhatsApp</th><th>Estado</th><th></th></tr></thead>
+              <tbody id="lista-matriculas"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ATENCIÓN HUMANA -->
+      <section id="humano" class="pestana" hidden>
+        <div class="tarjeta">
+          <h2>Personas que pidieron hablar con alguien del CEA</h2>
+          <p class="sutil">Lizz les dijo que la oficina los contactará. Escríbeles desde el WhatsApp de la oficina y marca la solicitud como atendida.</p>
+          <div class="tabla-envoltura">
+            <table>
+              <thead><tr><th>Fecha</th><th>Nombre</th><th>WhatsApp</th><th>Motivo</th><th>Resumen</th><th></th></tr></thead>
+              <tbody id="lista-humano"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- INFO DEL AGENTE (preguntas frecuentes) -->
+      <section id="faq" class="pestana" hidden>
+        <form id="form-faq" class="tarjeta">
+          <h2>Agregar información para Lizz</h2>
+          <p class="sutil">Lizz responde preguntas generales <strong>solo</strong> con lo que esté aquí. Si algo no está, no lo inventa.</p>
+          <div class="rejilla">
+            <label>Tema
+              <input name="tema" required list="temas-faq" placeholder="Precios">
+              <datalist id="temas-faq">
+                <option>Precios</option><option>Requisitos</option><option>Documentos</option>
+                <option>Horarios</option><option>Pagos</option><option>Ubicación</option>
+                <option>Exámenes</option><option>Proceso</option>
+              </datalist>
+            </label>
+            <label>Pregunta <input name="pregunta" required placeholder="¿Cuánto cuesta la licencia B1?"></label>
+          </div>
+          <label>Respuesta
+            <textarea name="respuesta" required rows="3" placeholder="El curso para licencia B1 cuesta $1.200.000 e incluye…"></textarea>
+          </label>
+          <button type="submit">Guardar</button>
+        </form>
+        <div class="tarjeta">
+          <h2>Lo que sabe Lizz</h2>
+          <div id="lista-faq"></div>
+        </div>
+      </section>
+
+      <!-- MENSAJES -->
+      <section id="mensajes" class="pestana" hidden>
+        <div class="tarjeta">
+          <h2>Mensajes enviados por WhatsApp</h2>
+          <div class="tabla-envoltura">
+            <table>
+              <thead><tr><th>Fecha</th><th>Alumno</th><th>Tipo</th><th>Resultado</th></tr></thead>
+              <tbody id="lista-mensajes"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- INSTRUCTORES Y VEHÍCULOS -->
+      <section id="instructores" class="pestana" hidden>
+        <div class="columnas">
+          <div class="tarjeta">
+            <h2>Instructores</h2>
+            <ul id="lista-instructores" class="lista"></ul>
+            <form id="form-instructor" class="form-linea">
+              <label>Nuevo instructor <input name="nombre" required placeholder="Nombre completo"></label>
+              <button type="submit">Agregar</button>
+            </form>
+          </div>
+          <div class="tarjeta">
+            <h2>Vehículos</h2>
+            <ul id="lista-vehiculos" class="lista"></ul>
+            <form id="form-vehiculo" class="form-linea">
+              <label>Placa <input name="placa" required placeholder="ABC-123" autocomplete="off"></label>
+              <label>Descripción <input name="descripcion" placeholder="Moto A2, carro B1…"></label>
+              <button type="submit">Agregar</button>
+            </form>
+            <p class="sutil">El vehículo no queda fijo a un instructor: se elige en cada turno.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- IMPORTAR Y NISSIX -->
+      <section id="importar" class="pestana" hidden>
+        <div class="tarjeta">
+          <h2>Sincronización con NissiX</h2>
+          <p class="sutil">Se traen solos de NissiX los alumnos de los últimos 90 días, con su WhatsApp y su saldo: cada <strong>domingo a las 6 p. m.</strong> y a las <strong>11:30 a. m. de los días de cobro</strong> (antes del recordatorio de saldo de las 12 m.). Con el botón se actualizan ya mismo. No envía mensajes: solo actualiza los datos.</p>
+          <div class="barra-herramientas">
+            <button type="button" class="boton-nissix">Actualizar saldos desde NissiX</button>
+            <span class="sutil ultima-nissix"></span>
+          </div>
+          <div class="tabla-envoltura">
+            <table>
+              <thead><tr><th>Fecha</th><th>Motivo</th><th>Resultado</th><th>Cifras</th><th>Avisos</th></tr></thead>
+              <tbody id="lista-sincronizaciones"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <details class="tarjeta plegable">
+          <summary>Importar desde Excel (opcional)</summary>
+          <p>Sube el <strong>Listado de Facturas</strong> tal como sale del sistema de facturación. Cada alumno se reconoce por su <strong>cédula</strong>: si ya existe, se actualizan su nombre, categoría, valor y <strong>saldo</strong>; si no, se crea.</p>
+          <label>Archivo (.xlsx, .xls o .csv)
+            <input type="file" id="archivo-excel" accept=".xlsx,.xls,.csv">
+          </label>
+          <div id="vista-previa" hidden>
+            <h3>Vista previa</h3>
+            <p id="resumen-importacion"></p>
+            <div class="tabla-envoltura">
+              <table>
+                <thead><tr><th>Cédula</th><th>Nombre</th><th>Categoría</th><th>Valor</th><th>Saldo</th><th>WhatsApp</th><th>Resultado</th></tr></thead>
+                <tbody id="lista-importacion"></tbody>
+              </table>
+            </div>
+            <label class="casilla">
+              <input type="checkbox" id="autorizan" checked>
+              Todos estos clientes autorizaron el tratamiento de sus datos y recibir mensajes por WhatsApp (Ley 1581 de 2012)
+            </label>
+            <button id="confirmar-importacion" type="button">Importar</button>
+          </div>
+        </details>
+      </section>
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

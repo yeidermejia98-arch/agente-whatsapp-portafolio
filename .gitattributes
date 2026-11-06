@@ -1,0 +1,5 @@
+# Los archivos que se ejecutan en Linux (servidor) deben tener saltos de línea LF
+*.sh text eol=lf
+*.png binary
+*.jpg binary
+*.pdf binary
